@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Created By: Ian Myers
 # Designed to created a Launch Deamon to run the Jamf recon command once at load in order to reestablish a conection 
 
 # LaunchDaemon Path
