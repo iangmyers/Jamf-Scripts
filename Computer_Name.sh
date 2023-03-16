@@ -4,6 +4,7 @@
 #Created Just Ian Myers
 #This uses a API call and the Jamf Biary commands to set the computer name with the format "Prefix-SN-Username"
 #Created 3/16/2023
+#Run as sudo when testing outside of Jamf
 ##############
 
 #API Var
