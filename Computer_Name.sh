@@ -24,5 +24,5 @@ Suffix=$(curl -su "$jUsername:$jPassword" -X GET "$jUrl/computers/serialnumber/$
 #Runs Jamf Bianary command to update name
 jamf setComputerName -name "$PREFIX$SN-$Suffix"
 
-#updated inventory (not required if an undate inventory is included in the policy)
+#update inventory (not required if an undate inventory is included in the policy)
 Jamf recon
