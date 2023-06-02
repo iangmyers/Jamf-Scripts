@@ -1,0 +1,14 @@
+#!/bin/sh
+lastUser=`ls -l /dev/console | awk '/ / { print $3 }'`
+if [ $lastUser == "" ]; then
+    echo "No User"
+else
+    # Testing Echo
+    echo "User Found: $lastUser"
+    
+    # For EA uncomment out what is bellow
+    #echo "<result>$lastUser</result>"
+    
+    # For Recon update username uncooment out what is bellow
+    jamf recon -endUsername $lastUser
+fi
