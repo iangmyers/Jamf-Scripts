@@ -2,7 +2,8 @@
 
 ##############
 #Created by Ian Myers
-#This script is designed to either be triggered daily with a Launch Daemon or via Jamf Policy on a daily bases to check up time and propmt/ force restarts. 
+#This script is designed to either be triggered with a Launch Daemon or via Jamf Policy on a time bases that works for your environment. 
+#It will check up time and propmt/ force restarts if parameters are met. 
 #Created 12/20/2023
 #Run as sudo when testing outside of Jamf
 ##############
