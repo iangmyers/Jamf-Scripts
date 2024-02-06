@@ -9,15 +9,17 @@
 ##############
 
 ### Variables ### 
-restarttime="7" #Frequency in days of desired restart
+restarttime="6" #Frequency in days of desired restart
 RebootMinutes="5" #Reboot timer text in minutes for prompt
-Rebootdelay="300" #Reboot timer in seconds for prompt timer. Convert RebootMinutes to seconds. 
+Rebootdelay="300" #Reboot timer in seconds for prompt timer. Convert RebootMinutes to seconds.
+#IconPath="Your Icon Path Here" #Jamf Helper Icon (Optional)
+
 
 # Get Uptime
 Uptime=$(uptime | awk '{print $3}')
 
 # Sanity Check
-#echo $Uptime
+echo "Days without reboot: $Uptime"
 
 # Jamf Helper prompt with timer
 if [[ $Uptime -ge $restarttime ]]; then
@@ -32,7 +34,8 @@ if [[ $Uptime -ge $restarttime ]]; then
 	-defaultButton 1 \
 	-countdown \
 	-timeout $Rebootdelay \
-	-alignCountdown right)
+	-alignCountdown right\
+	-icon $IconPath)
 	
 	# Reboot if timer runs out or if button clicked
 	if [[ "$RebootPrompt" == "0" ]];then
@@ -40,7 +43,7 @@ if [[ $Uptime -ge $restarttime ]]; then
 		shutdown -r now
   
     		# Sanity Check
-		#Say "Reboot!"
+		echo "Time to reboot"
         
 	fi
 	exit 0
