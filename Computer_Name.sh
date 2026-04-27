@@ -3,7 +3,7 @@
 ##############
 # Created by Ian Myers
 # Sets the computer name in the format: "Prefix-SerialNumber-Username"
-# Uses the Jamf Pro API (v1) with bearer token auth (replaces deprecated Classic API + basic auth)
+# Uses the Jamf Pro API (v1) with bearer token auth
 #
 # Jamf Parameters:
 #   $4 - Jamf Pro API Username
@@ -12,6 +12,11 @@
 #
 # Updated: 04/2026
 # Run as sudo when testing outside of Jamf
+#
+# Notes:
+#   - Uses /api/v1/computers-inventory with section=USER_AND_LOCATION
+#   - JSON parsed with osascript JXA — no python3 / Xcode CLI tools required
+#   - Falls back to Prefix-SN if no username is assigned in Jamf
 ##############
 
 set -euo pipefail
@@ -21,7 +26,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 jUsername="${4}"
 jPassword="${5}"
-jUrl="${6}"
+jUrl="${6%/}"   # Strip trailing slash if present
 
 # ---------------------------------------------------------------------------
 # Config
@@ -35,14 +40,15 @@ JAMF_BINARY="/usr/local/bin/jamf"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # ---------------------------------------------------------------------------
-# Get bearer token from Jamf Pro API
+# Get bearer token — parsed with osascript JXA (no python3 dependency)
 # ---------------------------------------------------------------------------
 log "Requesting bearer token from $jUrl"
-token=$(curl -sf --request POST \
+tokenJSON=$(curl -sf --request POST \
     --url "$jUrl/api/v1/auth/token" \
     --user "$jUsername:$jPassword" \
-    --header "Accept: application/json" \
-    | /usr/bin/python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+    --header "Accept: application/json")
+
+token=$(osascript -l JavaScript -e "JSON.parse(\`$tokenJSON\`).token")
 
 if [[ -z "$token" ]]; then
     log "ERROR: Failed to obtain bearer token. Check credentials and Jamf URL."
@@ -74,18 +80,22 @@ log "Serial number: $SN"
 
 # ---------------------------------------------------------------------------
 # Look up assigned username from Jamf Pro API
+# Uses /api/v1/computers-inventory with section=USER_AND_LOCATION
+# Filter uses URL-encoded == operator (%3D%3D) as required by the API
 # ---------------------------------------------------------------------------
 log "Looking up username for serial number $SN"
-Suffix=$(curl -sf --request GET \
-    --url "$jUrl/api/v1/computers-preview?filter=hardware.serialNumber==$SN" \
+inventoryJSON=$(curl -sf --request GET \
+    --url "$jUrl/api/v1/computers-inventory?section=USER_AND_LOCATION&filter=hardware.serialNumber%3D%3D%22${SN}%22" \
     --header "Authorization: Bearer $token" \
-    --header "Accept: application/json" \
-    | /usr/bin/python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-results = data.get('results', [])
-if results:
-    print(results[0].get('userAndLocation', {}).get('username', ''))
+    --header "Accept: application/json" || true)
+
+Suffix=$(osascript -l JavaScript -e "
+var data = JSON.parse(\`$inventoryJSON\`);
+var results = data.results;
+if (results && results.length > 0) {
+    var u = results[0].userAndLocation;
+    u && u.username ? u.username : '';
+} else { ''; }
 " 2>/dev/null || true)
 
 # ---------------------------------------------------------------------------
