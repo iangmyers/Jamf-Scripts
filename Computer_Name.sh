@@ -16,6 +16,8 @@
 # Notes:
 #   - Uses /api/v1/computers-inventory with section=USER_AND_LOCATION
 #   - JSON parsed with osascript JXA — no python3 / Xcode CLI tools required
+#   - If username is an email address, only the prefix before @ is used
+#     e.g. ian.myers@company.com → ian.myers
 #   - Falls back to Prefix-SN if no username is assigned in Jamf
 ##############
 
@@ -89,7 +91,7 @@ inventoryJSON=$(curl -sf --request GET \
     --header "Authorization: Bearer $token" \
     --header "Accept: application/json" || true)
 
-Suffix=$(osascript -l JavaScript -e "
+RawUsername=$(osascript -l JavaScript -e "
 var data = JSON.parse(\`$inventoryJSON\`);
 var results = data.results;
 if (results && results.length > 0) {
@@ -99,11 +101,22 @@ if (results && results.length > 0) {
 " 2>/dev/null || true)
 
 # ---------------------------------------------------------------------------
+# Strip email domain if username is an email address
+# e.g. ian.myers@company.com → ian.myers
+# If no @ present the full username is used as-is
+# ---------------------------------------------------------------------------
+Suffix=$(echo "$RawUsername" | cut -d'@' -f1)
+
+if [[ -n "$RawUsername" ]]; then
+    log "Raw username from Jamf: $RawUsername"
+    log "Using suffix: $Suffix"
+fi
+
+# ---------------------------------------------------------------------------
 # Build computer name — fallback gracefully if no username is assigned
 # ---------------------------------------------------------------------------
 if [[ -n "$Suffix" ]]; then
     COMPUTER_NAME="${PREFIX}${SN}-${Suffix}"
-    log "Username found: $Suffix"
 else
     COMPUTER_NAME="${PREFIX}${SN}"
     log "WARNING: No username found in Jamf. Setting name without username suffix."
