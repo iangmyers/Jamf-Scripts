@@ -13,14 +13,19 @@
 # --- Configuration ---
 POLICY_URL="$4"
 LOG_TAG="FileVaultCheck"
-SELF_SERVICE_ICON="/Applications/Self Service.app/Contents/Resources/AppIcon.icns"
-SWIFT_DIALOG="/usr/local/bin/dialog"
 
 # --- Logging ---
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"
     /usr/bin/logger -t "$LOG_TAG" "$1"
 }
+
+# --- Resolve Self Service icon (supports SS+, classic, and system fallback) ---
+SELF_SERVICE_ICON=$(find /Applications -maxdepth 2 -name "AppIcon.icns" -path "*Self Service*" 2>/dev/null | head -1)
+[[ -z "$SELF_SERVICE_ICON" ]] && SELF_SERVICE_ICON="/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/AlertNoteIcon.icns"
+log "Using icon: $SELF_SERVICE_ICON"
+
+SWIFT_DIALOG="/usr/local/bin/dialog"
 
 # --- Check FileVault Status ---
 FV_STATUS=$(fdesetup status | awk '{print $NF}' | tr -d '.')
@@ -35,7 +40,6 @@ if [[ "$FV_STATUS" == "On" ]]; then
 elif [[ "$FV_STATUS" == "Off" ]]; then
     log "FileVault is disabled. Prompting user."
 
-    # Prefer swiftDialog if available, fall back to jamfHelper
     if [[ -e "$SWIFT_DIALOG" ]]; then
         "$SWIFT_DIALOG" \
             --title "Encryption Required" \
@@ -55,7 +59,6 @@ elif [[ "$FV_STATUS" == "Off" ]]; then
         fi
 
     else
-        # Legacy fallback: jamfHelper
         log "swiftDialog not found. Falling back to jamfHelper."
         JAMF_HELPER="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
         "$JAMF_HELPER" \
@@ -79,4 +82,3 @@ else
 fi
 
 exit 0
-
