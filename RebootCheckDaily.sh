@@ -1,58 +1,93 @@
 #!/bin/bash
+##########
+# Created by Ian Myers
+# Updated: 2026
+# Checks system uptime and prompts the user to restart if the threshold is met.
+# Forces a restart if the user dismisses or the countdown expires.
+#
+# Designed to run via Jamf Policy or LaunchDaemon on a schedule.
+# Must run as root.
+#
+# Parameters:
+#   $4 - (Optional) Restart threshold in days. Defaults to 6.
+#   $5 - (Optional) Countdown time in seconds before forced restart. Defaults to 300.
+##########
 
-##############
-#Created by Ian Myers
-#This script is designed to either be triggered with a Launch Daemon or via Jamf Policy on a time bases that works for your environment. 
-#It will check up time and propmt/ force restarts if parameters are met. 
-#Created 12/20/2023
-#Run as sudo when testing outside of Jamf
-##############
+# --- Configuration ---
+RESTART_THRESHOLD="${4:-6}"
+COUNTDOWN_SECONDS="${5:-300}"
+COUNTDOWN_MINUTES=$(( COUNTDOWN_SECONDS / 60 ))
+LOG_TAG="UptimeRestartCheck"
+SWIFT_DIALOG="/usr/local/bin/dialog"
 
-### Variables ### 
-restarttime="6" #Frequency in days of desired restart
-RebootMinutes="5" #Reboot timer text in minutes for prompt
-Rebootdelay="300" #Reboot timer in seconds for prompt timer. Convert RebootMinutes to seconds.
-#IconPath="Your Icon Path Here" #Jamf Helper Icon (Optional)
+# --- Logging ---
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"
+    /usr/bin/logger -t "$LOG_TAG" "$1"
+}
 
+# --- Resolve Self Service icon (supports SS+, classic, and system fallback) ---
+SELF_SERVICE_ICON=$(find /Applications -maxdepth 2 -name "AppIcon.icns" -path "*Self Service*" 2>/dev/null | head -1)
+[[ -z "$SELF_SERVICE_ICON" ]] && SELF_SERVICE_ICON="/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/AlertNoteIcon.icns"
+log "Using icon: $SELF_SERVICE_ICON"
 
-# Get Uptime
-Uptime=$(uptime | awk '{print $3}')
+# --- Get Uptime in Days ---
+BOOT_TIME=$(sysctl -n kern.boottime | awk '{print $4}' | tr -d ',')
+NOW=$(date +%s)
+UPTIME_SECONDS=$(( NOW - BOOT_TIME ))
+UPTIME_DAYS=$(( UPTIME_SECONDS / 86400 ))
 
-# Sanity Check
-echo "Days without reboot: $Uptime"
+log "System uptime: $UPTIME_DAYS day(s). Threshold: $RESTART_THRESHOLD day(s)."
 
-# Jamf Helper prompt with timer
-if [[ $Uptime -ge $restarttime ]]; then
-	#JH for user warning
-	RebootPrompt=$(/Library/Application\ Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper \
-	-windowType utility \
-	-lockHUD \
-	-title "Restart needed" \
-	-heading "ALERT: Your Mac has not been restarted for $Uptime days" \
-	-description "Your Mac will automatically restart in $RebootMinutes minutes. Please save anything you are working on. To restart now click Restart Now" \
-	-button1 "Restart Now" \
-	-defaultButton 1 \
-	-countdown \
-	-timeout $Rebootdelay \
-	-alignCountdown right\
-	-icon $IconPath)
-	
-	# Reboot if timer runs out or if button clicked
-	if [[ "$RebootPrompt" == "0" ]];then
-		# Reboot Command
-		shutdown -r now
-  
-    		# Sanity Check
-		echo "Time to reboot"
-        
-	fi
-	exit 0
-	
+# --- Check if restart is needed ---
+if [[ "$UPTIME_DAYS" -lt "$RESTART_THRESHOLD" ]]; then
+    log "Uptime below threshold. No action required."
+    exit 0
 fi
 
-# If not time do something (Optional)		
-if [[ $Uptime -le $restarttime ]]; then
-	echo "Not time to reboot"
+log "Uptime meets or exceeds threshold. Prompting user."
 
-	exit 0
+# --- Prompt user ---
+if [[ -e "$SWIFT_DIALOG" ]]; then
+    "$SWIFT_DIALOG" \
+        --title "Restart Required" \
+        --message "Your Mac hasn't been restarted in **$UPTIME_DAYS days**.\n\nYour Mac will restart automatically in $COUNTDOWN_MINUTES minutes. Please save your work before then." \
+        --icon "$SELF_SERVICE_ICON" \
+        --button1text "Restart Now" \
+        --button2text "Remind Me Later" \
+        --timer "$COUNTDOWN_SECONDS" \
+        --ontop \
+        --moveable
+    DIALOG_EXIT=$?
+
+    if [[ "$DIALOG_EXIT" == "0" ]] || [[ "$DIALOG_EXIT" == "4" ]]; then
+        log "Restarting now. (Dialog exit: $DIALOG_EXIT)"
+        /sbin/shutdown -r now
+    else
+        log "User chose to defer restart. (Dialog exit: $DIALOG_EXIT)"
+        exit 0
+    fi
+
+else
+    log "swiftDialog not found. Falling back to jamfHelper."
+    JAMF_HELPER="/Library/Application Support/JAMF/bin/jamfHelper.app/Contents/MacOS/jamfHelper"
+
+    REBOOT_PROMPT=$("$JAMF_HELPER" \
+        -windowType utility \
+        -lockHUD \
+        -title "Restart Required" \
+        -heading "Your Mac has not restarted in $UPTIME_DAYS days" \
+        -description "Your Mac will restart automatically in $COUNTDOWN_MINUTES minutes. Please save your work. Click 'Restart Now' to restart immediately." \
+        -button1 "Restart Now" \
+        -defaultButton 1 \
+        -countdown \
+        -timeout "$COUNTDOWN_SECONDS" \
+        -alignCountdown right)
+
+    if [[ "$REBOOT_PROMPT" == "0" ]]; then
+        log "Restarting now via jamfHelper prompt."
+        /sbin/shutdown -r now
+    fi
 fi
+
+exit 0
