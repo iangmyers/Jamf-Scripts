@@ -1,21 +1,42 @@
 #!/bin/bash
-
-###########
+##########
 # Created by Ian Myers
-# 3/21/23
-# This is designed to be used in conjusctions with an EA that identifies the admin account on the computer and a smart group.
-# It will change their permissions from admin to standard exculding the choosen IT account. 
-###########
+# Updated: 2026
+# Demotes all admin accounts to standard users, excluding a specified IT account.
+# Designed to be used with an EA that identifies admin accounts and a Smart Group.
+#
+# Parameters:
+#   $4 - Username of the IT/service account to exclude from demotion
+##########
 
-# Var for account to exclude
-ITAccount=$4
+# --- Configuration ---
+IT_ACCOUNT="$4"
+LOG_TAG="DemoteAdmins"
 
-# get a list of all admin users on the Mac, excluding "Jamf_it"
-adminUsers=$(dscl . -read /Groups/admin GroupMembership | cut -c18- | tr ' ' '\n' | grep -v "$ITAccount")
+# --- Logging ---
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$LOG_TAG] $1"
+    /usr/bin/logger -t "$LOG_TAG" "$1"
+}
 
-# loop through the list of admin users and set them to standard users
-for user in $adminUsers
-do
-    dseditgroup -o edit -d $user -t user admin
-    echo "Set user $user to standard"
-done
+# --- Validate parameter ---
+if [[ -z "$IT_ACCOUNT" ]]; then
+    log "WARNING: No IT account exclusion specified via \$4. Proceeding without exclusion."
+fi
+
+# --- Get list of admin users, excluding the IT account ---
+ADMIN_USERS=$(dscl . -read /Groups/admin GroupMembership | tr ' ' '\n' | tail -n +2 | grep -v "^${IT_ACCOUNT}$")
+
+if [[ -z "$ADMIN_USERS" ]]; then
+    log "No admin users found to demote."
+    exit 0
+fi
+
+# --- Demote each admin to standard user ---
+while IFS= read -r user; do
+    dseditgroup -o edit -d "$user" -t user admin
+    log "Set user '$user' to standard."
+done <<< "$ADMIN_USERS"
+
+log "Admin demotion complete."
+exit 0
